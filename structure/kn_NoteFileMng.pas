@@ -172,6 +172,7 @@ resourcestring
   IntervalBAKDay = '_BAK_Day.knt';
   IntervalPrefixBAK = '_BAK@';
   STR_78 = 'Backup at %s before any modification in "%s"';
+  STR_79 = 'File is not modified. Nothing to save';
 
 
 //=================================================================
@@ -358,6 +359,8 @@ begin
 
             // NoteFile.OnNoteLoad := OnNoteLoaded;
             result := NoteFile.Load( FN );
+            if NoteFile.OpenAsReadOnly then
+               OpenReadOnly:= True;
 
             for i := 0 to NoteFile.Notes.Count -1 do
             begin
@@ -717,15 +720,13 @@ begin
                bakFNfrom := bakFN + IntToStr(bakIndex);
             bakFNto := bakFN + IntToStr(Succ(bakIndex));
             if WideFileExists(bakFNfrom) then
-                 MoveFileExW(
-                   PWideChar(bakFNfrom), PWideChar(bakFNto),
-                   MOVEFILE_REPLACE_EXISTING or MOVEFILE_COPY_ALLOWED);
+                 MoveFileExW_n(bakFNfrom, bakFNto, 3);
          end; // for
        end;
    end;
 
-   SUCCESS := MoveFileExW(PWideChar(FN), PWideChar(BakFN),
-                 MOVEFILE_REPLACE_EXISTING or MOVEFILE_COPY_ALLOWED );
+   SUCCESS := MoveFileExW_n(FN, BakFN, 3);
+
 
    if KeyOptions.BackupRegularIntervals and FirstSaveInDay then
       SaveToFile(DayBakFN_Txt, Format(STR_78, [DateToStr(Date), BakFN]));
@@ -804,11 +805,16 @@ begin
      result := -1;
      if not HaveNotes(true, false) then Exit;
      if FileIsBusy then Exit;
+
      if (FN <> '') and NoteFile.ReadOnly then begin
-         DoMessageBox(STR_77, mtError, [mbOK], 0);
+         DoMessageBox(STR_77, mtWarning, [mbOK], 0);
          Exit;
      end;
 
+     if (FN <> '') and not NoteFile.Modified then begin
+         StatusBar.Panels[PANEL_HINT].Text := STR_79;
+         Exit;
+     end;
 
      ErrStr := '';
 
@@ -848,11 +854,13 @@ begin
            end;
 
            if SaveDlg.Execute then begin
+              NoteFile.OpenAsReadOnly := False;
+
               FN := NormalFN(SaveDlg.FileName);
               ext := ExtractFileExt(FN);
               if ext = '' then begin
                  case NoteFile.FileFormat of
-                   nffKeyNote:
+                   nffKeyNote, nffKeyNoteZip:
                      FN := FN + ext_KeyNote;
                    nffEncrypted:
                      if KeyOptions.EncFileAltExt then
@@ -2467,6 +2475,7 @@ begin
           TrayIcon.Hint := Program_Name + STR_71;
           Caption := Format( '%s  %s -' + STR_71,
             [Program_Name, Program_Version] );
+          TB_FileSave.Enabled := False;
           Application.Title := Program_Name;
         end;
         UpdateTabAndTreeIconsShow;

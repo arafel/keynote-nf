@@ -874,8 +874,8 @@ begin
     AutoRegisterFileType := false;
     AutoRegisterPrompt := true;
     AutoSave := true;
-    AutoSaveOnFocus := true;
-    AutoSaveOnTimer := false;
+    AutoSaveOnFocus := false;
+    AutoSaveOnTimer := true;
     AutoSaveOnTimerInt := 10;
     Backup := true;
     BackupAppendExt := true;
@@ -1952,7 +1952,7 @@ procedure InitializeResPanelOptions( var Struct : TResPanelOptions );
 begin
   with Struct do
   begin
-    ColorFindList := false;
+    ColorFindList := True;
     FindListAltColor := clInfoBk;
     ShowFind := true;
     ShowMacro := true;

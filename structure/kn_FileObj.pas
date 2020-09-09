@@ -180,8 +180,8 @@ resourcestring
   STR_12 = 'Error: Filename not specified.';
   STR_13 = 'Error while saving note "%s": %s';
   STR_14 = 'Cannot save: Passphrase not set';
-  STR_15 = 'Failed to create output file "%s". Temporary savefile "%s" contains file data.';
-  STR_16 = 'Failed to create output file "%s". Temporary file "%s" contains saved data.';
+  STR_15 = 'Failed to create output file "%s" (Error: %d)' + #13#13 + 'Temporary savefile "%s" contains file data.';
+  STR_16 = 'Failed to create output file "%s" (Error: %d)' + #13#13 + 'Temporary file "%s" contains saved data.';
   STR_17 = 'Stream size error: Encrypted file is invalid or corrupt.';
   STR_18 = 'Invalid passphrase: Cannot open encrypted file.';
 
@@ -306,7 +306,7 @@ begin
   result := InternalAddNote( ANote );
   if ( ANote.ID = 0 ) then
     GenerateNoteID( ANote );
-  FModified := true;
+  Modified := true;
 end; // AddNote
 
 function TNoteFile.InternalAddNote( ANote : TTabNote ) : integer;
@@ -358,7 +358,7 @@ begin
   idx := FNotes.IndexOf( ANote );
   if ( idx < 0 ) then exit;
   FNotes.Delete( idx );
-  FModified := true;
+  Modified := true;
 end; // DeleteNote
 
 function TNoteFile.GetModified : boolean;
@@ -455,7 +455,7 @@ begin
   ADescription := trim( ADescription );
   if ( FDescription = ADescription ) then exit;
   FDescription := ADescription;
-  FModified := true;
+  Modified := true;
 end; // SetDescription
 
 procedure TNoteFile.SetComment( AComment : TCommentStr );
@@ -463,7 +463,7 @@ begin
   AComment := trim( AComment );
   if ( FComment = AComment ) then exit;
   FComment := AComment;
-  FModified := true;
+  Modified := true;
 end; // SetComment
 
 procedure TNoteFile.SetFileFormat( AFileFormat : TNoteFileFormat );
@@ -476,7 +476,11 @@ procedure TNoteFile.SetModified( AModified : boolean );
 var
   i : integer;
 begin
+  if FModified = AModified then exit;
+
   FModified := AModified;
+  Form_Main.TB_FileSave.Enabled := FModified;
+
   if (( not FModified ) and ( FNotes.Count > 0 )) then
   begin
     for i := 0 to pred( FNotes.Count ) do
@@ -947,7 +951,7 @@ begin
   finally
     if assigned( Stream ) then Stream.Free;
     // FNoteCount := Notes.Count;
-    FModified := false;
+    Modified := false;
     VerifyNoteIds;
   end;
 
@@ -967,7 +971,7 @@ var
   ds : string;
   tf : TWTextFile;
   AuxStream : TMemoryStream;
-  tempFN : wideString;
+  tempDirectory, tempFN : wideString;
 
   procedure WriteNoteFile;
   var
@@ -1054,13 +1058,26 @@ var
     result := 0;
   end;
 
+  procedure RenameTempFile;
+  var
+     Str: WideString;
+  begin
+     if not MoveFileExW_n (tempFN, FN, 5) then begin
+        if _OSIsWindowsNT then
+           Str:= STR_15
+        else
+           Str:= STR_16;
+        raise EKeyNoteFileError.CreateFmt(Str, [FN, GetLastError, tempFN]);
+     end;
+  end;
+
 begin
   result := -1; // error before saving file
   Stream := nil;
   SetVersion;
   FSavedWithRichEdit3 := ( _LoadedRichEditVersion = 3 );
 
-  if (( FFileFormat in [nffDartNotes] ) and HasExtendedNotes ) then
+  if ((FFileFormat in [nffDartNotes]) and HasExtendedNotes ) then
     raise EKeyNoteFileError.CreateFmt( STR_10, [FILE_FORMAT_NAMES[FFileFormat], TABNOTE_KIND_NAMES[ntRTF]] );
 
   if ( FN = '' ) then
@@ -1082,7 +1099,8 @@ begin
   // get a random temp file name. For safety, we will write data
   // to the temp file, and only overwrite the actual keynote file
   // after the save process is complete.
-  tempFN := extractfilepath( FN ) + RandomFileName( extractfilepath( FN ), ext_Temp, 8 );
+  tempDirectory:= GetTempDirectory;
+  tempFN := tempDirectory + RandomFileName(tempDirectory, ext_Temp, 8);
 
   result := 2; // error writing to file
   try
@@ -1105,7 +1123,7 @@ begin
 
           try
             WriteNoteFile;
-            FModified := false;
+            Modified := false;
           finally
             tf.closefile();
           end;
@@ -1124,7 +1142,7 @@ begin
               tf.assignstream( AuxStream );
               tf.rewrite;
               WriteNoteFile;
-              FModified := false;
+              Modified := false;
             finally
               tf.closefile();
             end;
@@ -1151,7 +1169,7 @@ begin
 
             try
               WriteNoteFile;
-              FModified := false;
+              Modified := false;
             finally
               tf.closefile();
             end;
@@ -1194,38 +1212,19 @@ begin
             end;
 
             result := 0;
-            FModified := false;
+            Modified := false;
           finally
             Stream.Free;
           end;
         end; // nffDartNotes
       end; // CASE
 
+
       // Now rename the temp file to the actual KeyNote file name
-      if _OSIsWindowsNT then
-      begin
-        if ( not MoveFileExW( PWideChar( tempFN ), PWideChar( FN ), MOVEFILE_REPLACE_EXISTING )) then
-        begin
-          raise EKeyNoteFileError.CreateFmt( STR_15, [FN, tempFN] );
-        end;
-      end
-      else
-      begin
-        if CopyFileW( PWideChar( tempFN ), PWideChar( FN ), false ) then
-          deletefileW( PWideChar(tempFN) )
-        else
-          raise EKeyNoteFileError.CreateFmt( STR_16, [FN, tempFN] );
-      end;
+      RenameTempFile;
 
     except
       raise;
-      {
-      On E : Exception do
-      begin
-        messagedlg( 'Error saving file: ' + E.Message, mtError, [mbOK], 0 );
-        exit;
-      end;
-      }
     end;
   finally
   end;
